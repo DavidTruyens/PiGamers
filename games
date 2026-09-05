@@ -1,0 +1,26 @@
+#!/usr/bin/env bash
+#
+# Show what's playable on this Pi.
+#
+# Add a game by adding one line to the list below:
+#     "command|players|what it is"
+#
+set -euo pipefail
+
+GAMES=(
+    "play-invaders|2 players|Space Invaders. Fight off the aliens together."
+)
+
+cyan=$'\033[36m'; bold=$'\033[1m'; dim=$'\033[2m'; off=$'\033[0m'
+
+printf '\n  %sGames on this Pi%s\n\n' "$bold" "$off"
+
+for entry in "${GAMES[@]}"; do
+    IFS='|' read -r cmd players blurb <<< "$entry"
+    printf '  %s%-16s%s %s%-10s%s %s\n' "$cyan$bold" "$cmd" "$off" \
+        "$dim" "$players" "$off" "$blurb"
+done
+
+printf '\n  %sType the command in the left column to play.%s\n' "$dim" "$off"
+printf '  %sTwo players: you both run the same command — first one in starts%s\n' "$dim" "$off"
+printf '  %sthe game, second one joins it.%s\n\n' "$dim" "$off"
