@@ -9,11 +9,13 @@ the way instead of clicking buttons.
 ```text
    Sam's laptop  ──┐
                    ├── Tailscale ──▶  pigamers  ──▶  one shared tmux session
-   Finn's laptop ──┘                  (Raspberry Pi)      running invaders.py
+   Finn's laptop ──┘                  (Raspberry Pi)      running the game
 ```
 
-The first kid to run `play-invaders` starts the game. The second one attaches to
-the same tmux session and lands in the same game, controlling player 2.
+Three games so far: **Space Invaders**, **Pong**, and **Pac-Man vs Ghost**.
+
+The first kid to run a game starts it. The second one attaches to the same tmux
+session and lands in the same match, controlling player 2.
 
 ---
 
@@ -92,8 +94,11 @@ plug in a keyboard.
 ## 3. First boot
 
 Put the card in the Pi, connect Ethernet if you're using it, and power it up.
-Give it two or three minutes on the first boot — it resizes the filesystem and
-reboots itself.
+
+**Be patient here.** First boot resizes the filesystem and reboots once, so give
+it several minutes. If you try too early you'll get `Connection refused` — that
+means the Pi is up and answering, but `sshd` hasn't started yet. Wait and retry;
+it isn't a sign anything is wrong.
 
 From your Mac:
 
@@ -157,17 +162,20 @@ Clone into `/opt` so it belongs to the machine rather than to any one account:
 sudo git clone https://github.com/DavidTruyens/PiGamers.git /opt/pigamers
 sudo chgrp -R gamers /opt/pigamers
 sudo chmod -R g+rX /opt/pigamers
-sudo chmod +x /opt/pigamers/play-invaders.sh /opt/pigamers/games
+sudo chmod +x /opt/pigamers/*.sh /opt/pigamers/games
 ```
 
 Put the commands on everyone's `PATH`:
 
 ```bash
 sudo ln -sf /opt/pigamers/play-invaders.sh /usr/local/bin/play-invaders
+sudo ln -sf /opt/pigamers/play-pong.sh     /usr/local/bin/play-pong
+sudo ln -sf /opt/pigamers/play-pacman.sh   /usr/local/bin/play-pacman
 sudo ln -sf /opt/pigamers/games            /usr/local/bin/games
 ```
 
-Now `play-invaders` and `games` work from anywhere, for anyone.
+Now `games`, `play-invaders`, `play-pong` and `play-pacman` work from
+anywhere, for anyone.
 
 To pick up new games later, anyone can run:
 
@@ -191,7 +199,9 @@ sudo tee /etc/motd > /dev/null <<'EOF'
   .▀   ▀▀▀·▀▀▀▀  ▀  ▀ ▀▀  █▪▀▀▀ ▀▀▀ .▀  ▀ ▀▀▀▀
 
   Type  games          to see what you can play
-  Type  play-invaders  to start Space Invaders
+  Type  play-invaders  aliens are landing, shoot them
+  Type  play-pong      first to 7 wins
+  Type  play-pacman    one runs, one hunts
   Type  who            to see who else is logged in
 
 EOF
@@ -458,28 +468,62 @@ Each kid opens a terminal and runs:
 
 ```bash
 ssh sam@pigamers      # or finn@pigamers
-play-invaders
+games                 # see what's available
+play-pong             # ...or play-invaders, or play-pacman
 ```
 
-Whoever runs it first starts the game. The second one joins the same session and
-is player 2 automatically.
+Whoever runs a game first starts it. The second one joins the same session
+and is player 2 automatically. Each game has its own session, so you can
+leave a Pac-Man match running and go play Pong.
 
-|  | Move | Fire |
+### Space Invaders
+
+Aliens march down the screen; shoot them before they land. Both of you
+share the wave and compete on score.
+
+| | Move | Fire |
 | --- | --- | --- |
 | **Player 1** | `←` `→` | `SPACE` |
 | **Player 2** | `A` `D` | `W` |
 
+### Pong
+
+The angle the ball leaves your bat depends on *where* it hits — middle
+sends it flat, edges send it steep. Aiming beats hammering the keys. The
+ball speeds up on every return. First to 7.
+
+| | Move |
+| --- | --- |
+| **Player 1** (left bat) | `↑` `↓` |
+| **Player 2** (right bat) | `W` `S` |
+
+### Pac-Man vs Ghost
+
+One of you is Pac-Man clearing the maze; the other drives the red ghost
+hunting them, helped by three computer ghosts. Eat a big `o` and it flips
+— for six seconds the ghosts are scared and Pac-Man can eat *them*.
+
+Pac-Man wins by clearing three mazes. The ghost wins by catching Pac-Man
+three times. Press `R` at the end to **swap roles** and go again, so
+neither of them is stuck being the ghost.
+
+| | Move |
+| --- | --- |
+| **Pac-Man** | `←` `→` `↑` `↓` |
+| **Red ghost** | `W` `A` `S` `D` |
+
+### In every game
+
 `P` pauses · `R` restarts after game over · `Q` quits
 
-Both need a terminal at least **80×24**. Smaller and the game refuses to start.
+Both need a terminal at least **80×24**. Smaller and the game refuses to
+start.
 
-To force a stuck session to end:
+To force a stuck game to end:
 
 ```bash
-tmux -S /tmp/invaders.sock kill-server
+tmux -S /tmp/pigamers-pong.sock kill-server      # or -invaders, or -pacman
 ```
-
----
 
 ## 12. Linux cheat sheet for the kids
 
@@ -489,6 +533,8 @@ Stick this on the wall.
 | --- | --- |
 | `games` | See what you can play |
 | `play-invaders` | Start Space Invaders |
+| `play-pong` | Start Pong |
+| `play-pacman` | Start Pac-Man vs Ghost |
 | `ls` | List the files here |
 | `cd folder` | Go into a folder — `cd ..` goes back up |
 | `pwd` | Where am I? |
@@ -520,6 +566,22 @@ directory first with `cp /opt/pigamers/invaders.py ~/` and run
 
 ## 13. Troubleshooting
 
+**"Connection refused" on the very first SSH.** Almost always means the Pi is
+still booting, not that anything is misconfigured. `avahi` starts early, so
+`pigamers.local` resolves before `sshd` is listening — the port is closed, the Pi
+sends a RST, and you get *refused* rather than a timeout. Wait and retry; first
+boot resizes the filesystem and reboots once, so it can take several minutes.
+
+The distinction is worth knowing, because the two errors mean opposite things:
+
+| Error | Meaning |
+| --- | --- |
+| `Connection refused` | Host is up and reachable, nothing listening on 22 — still booting, or SSH was never enabled |
+| `Operation timed out` / `No route to host` | Host isn't reachable at all — wrong IP, not on the network, not powered |
+
+If it's *still* refused after ten minutes, then SSH genuinely isn't enabled —
+reflash and make sure the Imager **Services** tab has *Enable SSH* ticked.
+
 **`pigamers.local` won't resolve.** mDNS is unreliable on some networks. Use the
 Pi's LAN IP from your router's client list, or its tailnet name once Tailscale is
 running.
@@ -539,11 +601,25 @@ below.
 **"Terminal is 74x22, need at least 60x20".** Make the terminal window bigger
 before running `play-invaders`.
 
-**The game is stuck or nobody can join.** Kill the shared session:
+**The game is stuck or nobody can join.** Kill that game's session:
 
 ```bash
-tmux -S /tmp/invaders.sock kill-server
+tmux -S /tmp/pigamers-invaders.sock kill-server
+tmux -S /tmp/pigamers-pong.sock kill-server
+tmux -S /tmp/pigamers-pacman.sock kill-server
 ```
+
+**"server exited unexpectedly" when starting a game.** tmux is reporting
+that the game crashed the instant it launched. Run it directly to see the
+real error instead of tmux's summary:
+
+```bash
+python3 /opt/pigamers/pong.py
+```
+
+**Rallies in Pong go on forever.** Two good players can out-last the ball.
+Open `pong.py`, raise `BALL_MAX_SPEED` in the TUNING KNOBS block, and try
+again — that's the knob that decides whether a bat can always catch up.
 
 **`apt update` fails after the firewall step.** DNS. Re-read *Fix DNS first* in
 section 10 — the Pi is almost certainly still pointed at your router.
@@ -610,8 +686,19 @@ recovery plan.
 
 ## Adding another game
 
-1. Drop the script in `/opt/pigamers/`.
-2. Add a line to the `games` script so it shows up in the list.
-3. If it's meant to be played together, copy `play-invaders.sh` and change the
-   `SESSION`, `SOCKET` and the command it runs.
-4. `git push`, then on the Pi: `cd /opt/pigamers && sudo git pull`.
+1. Drop `yourgame.py` in `/opt/pigamers/`.
+2. Copy `play-pong.sh` to `play-yourgame.sh` and change the last word to
+   `yourgame`. That's the whole wrapper — `play-game.sh` does the tmux work
+   and gives every game its own socket.
+3. Add a line to the `GAMES` list in the `games` script.
+4. Symlink it: `sudo ln -sf /opt/pigamers/play-yourgame.sh /usr/local/bin/play-yourgame`
+5. `git push`, then on the Pi: `cd /opt/pigamers && sudo git pull`.
+
+Keep each game in one self-contained file. They deliberately don't share
+code, so your son can break `pong.py` without stopping Pac-Man from working.
+
+Run the tests before you push — they play whole matches with no terminal:
+
+```bash
+python3 test_games.py
+```

@@ -9,6 +9,8 @@ set -euo pipefail
 
 GAMES=(
     "play-invaders|2 players|Space Invaders. Fight off the aliens together."
+    "play-pong|2 players|Pong. First to 7 points wins."
+    "play-pacman|2 players|Pac-Man vs Ghost. One runs, one hunts."
 )
 
 cyan=$'\033[36m'; bold=$'\033[1m'; dim=$'\033[2m'; off=$'\033[0m'
