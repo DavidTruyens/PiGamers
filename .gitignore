@@ -1,2 +1,4 @@
 __pycache__/
 *.pyc
+tailnet-policy.hujson
+tailnet-policy.json

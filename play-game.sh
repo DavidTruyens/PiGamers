@@ -41,9 +41,27 @@ if ! tmux -S "$SOCKET" has-session -t "$SESSION" 2>/dev/null; then
         || true
     tmux -S "$SOCKET" set-option -t "$SESSION" status off
 
-    # Let anyone in the 'gamers' group join this session.
+    # Let anyone in the 'gamers' group join this session. Two separate
+    # gates have to be opened:
+    #
+    #   1. The socket itself, via group ownership and mode 770.
+    #   2. tmux's own access list. Since tmux 3.3 the server refuses any
+    #      client whose UID differs from the one that started it, no
+    #      matter what the socket permissions say -- that refusal is the
+    #      "access not allowed" message. Everyone who may attach has to
+    #      be added here, by the user who owns the server, at the moment
+    #      the session is created.
     chgrp gamers "$SOCKET" 2>/dev/null || true
     chmod 770 "$SOCKET"
+
+    me="$(id -un)"
+    for player in $(getent group gamers | cut -d: -f4 | tr ',' ' '); do
+        [ "$player" = "$me" ] && continue
+        # -w gives write access, so the second player can actually play
+        # rather than just watch. Older tmux has no server-access at all
+        # and does not need it, hence the fallback.
+        tmux -S "$SOCKET" server-access -aw "$player" 2>/dev/null || true
+    done
 fi
 
 exec tmux -S "$SOCKET" attach -t "$SESSION"

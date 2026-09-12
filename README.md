@@ -138,19 +138,25 @@ sudo adduser finn
 
 sudo usermod -aG gamers sam
 sudo usermod -aG gamers finn
+
+# Add yourself too, or you can't join their games -- the shared game
+# socket is mode 770, owned by the 'gamers' group.
+sudo usermod -aG gamers david
 ```
 
-Deliberately **not** added to the `sudo` group. They can break their own account
-and nothing else.
+The kids are deliberately **not** added to the `sudo` group. They can break their
+own account and nothing else.
 
 Check it worked:
 
 ```bash
-groups sam    # -> sam : sam gamers
+groups sam      # -> sam : sam gamers
+groups david    # -> david : david adm sudo ... gamers
 ```
 
-> **Note:** group membership is only picked up at login. If you add someone to
-> `gamers` while they're logged in, they have to log out and back in.
+> **Group membership is only evaluated at login.** If you add someone to `gamers`
+> while they're logged in, they must log out and back in. To pick it up in the
+> session you're already in, run `newgrp gamers`.
 
 ---
 
@@ -230,7 +236,20 @@ Tailscale admin console. A new tailnet ships wide open:
 }
 ```
 
-Replace the whole file with this. Substitute the friend's real Tailscale email:
+> **If your tailnet already has devices on it, merge rather than replace.**
+> The stock policy also carries an `ssh` block allowing `autogroup:member` to
+> reach `autogroup:self` — that is what lets you `tailscale ssh` into your own
+> machines, and pasting over it will break them. Keep every rule you already
+> have and add the `tag:pigamers` ones below.
+>
+> Before saving, check whether any existing device is **tagged**:
+> a tagged device is not covered by `autogroup:self` and would lose access.
+>
+> ```bash
+> tailscale status --json | grep -A2 '"Tags"'
+> ```
+
+Replace the whole file with this. Substitute the kids' real Tailscale emails:
 
 ```jsonc
 {
@@ -267,15 +286,22 @@ Replace the whole file with this. Substitute the friend's real Tailscale email:
     },
 
     // The kids, only as their own accounts. Never as root, never as you.
+    //
+    // These must be real Tailscale logins. autogroup:shared works in
+    // grants (above) but is REJECTED here -- ssh rules accept only
+    // individual users, groups, autogroup:member or autogroup:tagged.
     {
       "action": "accept",
-      "src":    ["friend@example.com"],
+      "src":    ["sams-login@example.com", "finns-login@example.com"],
       "dst":    ["tag:pigamers"],
       "users":  ["sam", "finn"],
     },
   ],
 }
 ```
+
+The Linux usernames in `users` must match the accounts you made in section 4
+exactly. That pairing fails silently if it drifts.
 
 Click **Save**. The console validates as you save, so a rejected selector shows
 up immediately rather than silently doing nothing.
@@ -586,6 +612,17 @@ reflash and make sure the Imager **Services** tab has *Enable SSH* ticked.
 Pi's LAN IP from your router's client list, or its tailnet name once Tailscale is
 running.
 
+**`"autogroup:shared" is not allowed in src` when saving the policy.** You put
+it in an `ssh` rule. It is valid in `grants` but not in `ssh` — swap it for the
+kids' actual Tailscale logins.
+
+**`tailscale up` says the tag is not permitted.** `tag:pigamers` is not declared
+in `tagOwners` yet. Section 7 has to be saved before section 8 runs.
+
+**Your other tailnet devices stopped talking after saving the policy.**
+Un-comment the `{"src": ["*"], "dst": ["*"], "ip": ["*"]}` grant to restore
+everything instantly, then reintroduce the restrictions one rule at a time.
+
 **The kids can't SSH in.** Check in order:
 
 ```bash
@@ -600,6 +637,16 @@ below.
 
 **"Terminal is 74x22, need at least 60x20".** Make the terminal window bigger
 before running `play-invaders`.
+
+**`error connecting to /tmp/pigamers-*.sock (Permission denied)`.** You aren't in
+the `gamers` group, or you are but haven't logged in again since being added. The
+game socket is mode 770 owned by that group.
+
+```bash
+groups                          # is 'gamers' listed?
+sudo usermod -aG gamers david   # if not
+newgrp gamers                   # pick it up without logging out
+```
 
 **The game is stuck or nobody can join.** Kill that game's session:
 
