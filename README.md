@@ -183,6 +183,49 @@ sudo ln -sf /opt/pigamers/games            /usr/local/bin/games
 Now `games`, `play-invaders`, `play-pong` and `play-pacman` work from
 anywhere, for anyone.
 
+### One account owns every game
+
+Game sessions run as a dedicated `pigames` account rather than as whoever
+started them. Attaching to a tmux session means full control of it — so a
+session owned by your son is a session his friend can act as, including
+opening a shell as him. Pointing every session at one throwaway account
+removes that entirely.
+
+It also sidesteps a tmux rule: since 3.3 the server refuses any client whose
+UID differs from the owner's, whatever the socket permissions say. Here every
+client shares one UID, so the question never arises.
+
+```bash
+sudo adduser --system --group --home /var/lib/pigames --shell /bin/bash pigames
+```
+
+Then let the `gamers` group start games as that account:
+
+```bash
+sudo tee /etc/sudoers.d/pigamers > /dev/null <<'EOF'
+# Members of 'gamers' may start game sessions as the pigames account.
+# TERM must survive, or tmux cannot work out the terminal type.
+Defaults:%gamers env_keep += "TERM"
+%gamers ALL=(pigames) NOPASSWD: /opt/pigamers/play-game.sh
+EOF
+sudo chmod 440 /etc/sudoers.d/pigamers
+sudo visudo -c -f /etc/sudoers.d/pigamers
+```
+
+**Don't skip the `visudo -c`.** It validates the file before you rely on it; a
+malformed sudoers file can lock you out of `sudo` altogether.
+
+This grants no root access. A member of `gamers` can run commands as `pigames`
+and nothing else, and `pigames` owns nothing but its own game sessions.
+
+If you set this up before the `pigames` account existed, clear out the old
+sessions once:
+
+```bash
+sudo pkill -f 'tmux.*pigamers' || true
+sudo rm -f /tmp/pigamers-*.sock
+```
+
 To pick up new games later, anyone can run:
 
 ```bash
@@ -638,6 +681,24 @@ below.
 **"Terminal is 74x22, need at least 60x20".** Make the terminal window bigger
 before running `play-invaders`.
 
+**`play-game: not allowed to run games as 'pigames'`.** Either you aren't in the
+`gamers` group, or `/etc/sudoers.d/pigamers` is missing. Check both:
+
+```bash
+groups                                    # is 'gamers' there?
+sudo cat /etc/sudoers.d/pigamers          # does the rule exist?
+sudo visudo -c -f /etc/sudoers.d/pigamers # is it valid?
+```
+
+**`access not allowed` when joining a game.** A tmux session left over from
+before the `pigames` account existed — it's owned by a player's UID and tmux
+3.3+ refuses clients from any other user. Clear it once:
+
+```bash
+sudo pkill -f 'tmux.*pigamers' || true
+sudo rm -f /tmp/pigamers-*.sock
+```
+
 **`error connecting to /tmp/pigamers-*.sock (Permission denied)`.** You aren't in
 the `gamers` group, or you are but haven't logged in again since being added. The
 game socket is mode 770 owned by that group.
@@ -697,11 +758,12 @@ Being straight about the boundaries, since that was the point of the design.
   Linux privilege-escalation exploit, and they're ten — but it's why the
   guest-VLAN option in section 10 is the version to reach for if you want a real
   boundary rather than a very effective speed bump.
-- **Shared tmux means shared trust.** Whoever attaches second gets full control of
-  a tmux session running as the *first* kid's user — including the ability to
-  press `Ctrl-B` `c` and open a shell as them. Between two friends this is fine.
-  If it ever isn't, the fix is to run the game as a dedicated `invaders` service
-  user that owns the session, so neither kid's account is exposed to the other.
+- **Players share the `pigames` account.** Attaching to a tmux session gives
+  full control of it, so anyone in a game can press `Ctrl-B` `c` and get a shell
+  — as `pigames`, which owns nothing but game sessions. Their real accounts and
+  home directories stay private from each other, which is the part that matters.
+  What they *can* still do is interfere with each other's running game. For two
+  friends playing Space Invaders, that's called playing Space Invaders.
 - **If the Pi is compromised, it's on your LAN.** The firewall stops it dialling
   out to your NAS, but it's still physically attached to your network. Guest VLAN
   solves this properly.

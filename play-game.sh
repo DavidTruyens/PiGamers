@@ -7,21 +7,36 @@
 # The first player to run it starts the game; the second one joins the
 # same tmux session and lands in the same match.
 #
-# Every game gets its own socket, so Pong and Pac-Man can be running at
-# the same time without treading on each other.
+# Every session runs as one dedicated account, GAME_USER, rather than as
+# whoever happened to start it. Two things fall out of that:
+#
+#   * Nobody ends up with a shell as another player. Attaching to a tmux
+#     session means full control of it, so a session owned by a child is
+#     a session any other player can act as.
+#   * tmux's own access list stops mattering. Since 3.3 the server
+#     refuses clients whose UID differs from the owner's -- the "access
+#     not allowed" message -- and here every client shares one UID.
+#
+# Each game gets its own socket, so Pong and Pac-Man can run at once.
 #
 set -euo pipefail
 
+GAME_USER="pigames"
+
 GAME="${1:?usage: play-game.sh <game-name>}"
 
-SOCKET="/tmp/pigamers-$GAME.sock"
-SESSION="$GAME"
-COLS=80
-ROWS=24
+# The name becomes part of a path, so keep it boring.
+case "$GAME" in
+    ""|*[!a-z0-9-]*)
+        echo "play-game: bad game name: $GAME" >&2
+        exit 1
+        ;;
+esac
 
-# readlink -f follows the symlink in /usr/local/bin back to the real file,
-# so the game is found whether this is run by full path or by name.
-GAME_DIR="$(cd "$(dirname "$(readlink -f "${BASH_SOURCE[0]}")")" && pwd)"
+# readlink -f follows the symlink in /usr/local/bin back to the real
+# file, so this works whether it is run by full path or by name.
+SELF="$(readlink -f "${BASH_SOURCE[0]}")"
+GAME_DIR="$(cd "$(dirname "$SELF")" && pwd)"
 GAME_PY="$GAME_DIR/$GAME.py"
 
 if [ ! -f "$GAME_PY" ]; then
@@ -29,39 +44,45 @@ if [ ! -f "$GAME_PY" ]; then
     exit 1
 fi
 
+# Re-enter as the game user. sudo -n never prompts, so a missing rule
+# fails fast with something a ten-year-old can act on instead of a
+# password prompt they have no answer to.
+if [ "$(id -un)" != "$GAME_USER" ]; then
+    if ! sudo -n -u "$GAME_USER" true 2>/dev/null; then
+        echo "play-game: not allowed to run games as '$GAME_USER'." >&2
+        echo >&2
+        echo "  Are you in the 'gamers' group?  Check with:  groups" >&2
+        echo "  If it is missing, ask David to run:" >&2
+        echo "      sudo usermod -aG gamers \$(id -un)" >&2
+        echo "  Group membership only applies at login -- 'newgrp gamers'" >&2
+        echo "  picks it up without logging out." >&2
+        exit 1
+    fi
+    exec sudo -n -u "$GAME_USER" "$SELF" "$GAME"
+fi
+
+SOCKET="/tmp/pigamers-$GAME.sock"
+SESSION="$GAME"
+COLS=80
+ROWS=24
+
 if ! tmux -S "$SOCKET" has-session -t "$SESSION" 2>/dev/null; then
+    # A socket left behind by a dead server, or by the older version of
+    # this script that ran as the player, would block the new session.
+    if [ -S "$SOCKET" ] && [ -O "$SOCKET" ]; then
+        rm -f "$SOCKET"
+    fi
+
     tmux -S "$SOCKET" new-session -d -s "$SESSION" -x "$COLS" -y "$ROWS" \
         "python3 '$GAME_PY'"
 
     # Keep the playfield a fixed size, otherwise tmux shrinks the window
     # down to whoever has the smallest terminal. window-size is a window
-    # option, so try the window form first and fall back to the session one.
+    # option, so try that form first and fall back to the session one.
     tmux -S "$SOCKET" set-window-option -t "$SESSION" window-size manual 2>/dev/null \
         || tmux -S "$SOCKET" set-option -t "$SESSION" window-size manual 2>/dev/null \
         || true
     tmux -S "$SOCKET" set-option -t "$SESSION" status off
-
-    # Let anyone in the 'gamers' group join this session. Two separate
-    # gates have to be opened:
-    #
-    #   1. The socket itself, via group ownership and mode 770.
-    #   2. tmux's own access list. Since tmux 3.3 the server refuses any
-    #      client whose UID differs from the one that started it, no
-    #      matter what the socket permissions say -- that refusal is the
-    #      "access not allowed" message. Everyone who may attach has to
-    #      be added here, by the user who owns the server, at the moment
-    #      the session is created.
-    chgrp gamers "$SOCKET" 2>/dev/null || true
-    chmod 770 "$SOCKET"
-
-    me="$(id -un)"
-    for player in $(getent group gamers | cut -d: -f4 | tr ',' ' '); do
-        [ "$player" = "$me" ] && continue
-        # -w gives write access, so the second player can actually play
-        # rather than just watch. Older tmux has no server-access at all
-        # and does not need it, hence the fallback.
-        tmux -S "$SOCKET" server-access -aw "$player" 2>/dev/null || true
-    done
 fi
 
 exec tmux -S "$SOCKET" attach -t "$SESSION"
