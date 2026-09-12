@@ -682,13 +682,23 @@ below.
 before running `play-invaders`.
 
 **`play-game: not allowed to run games as 'pigames'`.** Either you aren't in the
-`gamers` group, or `/etc/sudoers.d/pigamers` is missing. Check both:
+`gamers` group, or `/etc/sudoers.d/pigamers` is missing. Check all three:
 
 ```bash
 groups                                    # is 'gamers' there?
 sudo cat /etc/sudoers.d/pigamers          # does the rule exist?
 sudo visudo -c -f /etc/sudoers.d/pigamers # is it valid?
 ```
+
+To see what sudo itself thinks, ask about the exact command:
+
+```bash
+sudo -n -l -u pigames /opt/pigamers/play-game.sh pacman ; echo "exit=$?"
+```
+
+`exit=0` means sudo allows it. Note that asking about a *different* command
+(`sudo -n -u pigames true`) will always be denied — the rule is deliberately
+scoped to `play-game.sh` alone, so that denial is correct rather than a fault.
 
 **`access not allowed` when joining a game.** A tmux session left over from
 before the `pigames` account existed — it's owned by a player's UID and tmux

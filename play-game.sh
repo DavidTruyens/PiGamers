@@ -47,8 +47,13 @@ fi
 # Re-enter as the game user. sudo -n never prompts, so a missing rule
 # fails fast with something a ten-year-old can act on instead of a
 # password prompt they have no answer to.
+#
+# The check asks about THIS command specifically. Asking whether some
+# other command is permitted -- 'true', say -- reports a denial whenever
+# the rule is correctly scoped to just this script, which is precisely
+# when everything is set up right.
 if [ "$(id -un)" != "$GAME_USER" ]; then
-    if ! sudo -n -u "$GAME_USER" true 2>/dev/null; then
+    if ! sudo -n -l -u "$GAME_USER" "$SELF" "$GAME" >/dev/null 2>&1; then
         echo "play-game: not allowed to run games as '$GAME_USER'." >&2
         echo >&2
         echo "  Are you in the 'gamers' group?  Check with:  groups" >&2
@@ -56,6 +61,10 @@ if [ "$(id -un)" != "$GAME_USER" ]; then
         echo "      sudo usermod -aG gamers \$(id -un)" >&2
         echo "  Group membership only applies at login -- 'newgrp gamers'" >&2
         echo "  picks it up without logging out." >&2
+        echo >&2
+        echo "  If the group is there, the sudo rule is missing. David:" >&2
+        echo "      sudo cat /etc/sudoers.d/pigamers" >&2
+        echo "      sudo visudo -c -f /etc/sudoers.d/pigamers" >&2
         exit 1
     fi
     exec sudo -n -u "$GAME_USER" "$SELF" "$GAME"
